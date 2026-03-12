@@ -1,0 +1,35 @@
+{
+  "name": "my-claude-score",
+  "version": "1.1.0",
+  "description": "Your Claude Code proficiency score — like neofetch, but for Claude Code skill",
+  "main": "my-claude-score.js",
+  "bin": {
+    "my-claude-score": "my-claude-score.js"
+  },
+  "scripts": {
+    "start": "node my-claude-score.js",
+    "test": "node my-claude-score.js --json"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "score",
+    "proficiency",
+    "cli",
+    "developer-tools",
+    "neofetch"
+  ],
+  "author": "guneet-wiom",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/guneet-wiom/my-claude-score.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "my-claude-score.js",
+    "lib/**/*.js"
+  ]
+}

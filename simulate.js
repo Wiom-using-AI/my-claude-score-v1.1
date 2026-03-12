@@ -3,32 +3,18 @@
 
 // ═══════════════════════════════════════════════════════════════════════
 // simulate.js — Monte Carlo simulation of 1000 non-technical users
-// Uses exact speed/proficiency formulas from lib/speed.js and lib/tiers.js
-// Zero dependencies — pure Node.js
+// Imports constants from lib/ to prevent drift — single source of truth
+// Zero npm dependencies — pure Node.js
 // ═══════════════════════════════════════════════════════════════════════
+
+const { SPEED_CURVE_CONFIG, SPEED_LABELS, getExpectedProficiency } = require('./lib/speed');
+const { TIERS } = require('./lib/tiers');
+
+// Alias for readability in the report (TIERS uses minScore field, not min)
+const PROF_TIERS = TIERS;
 
 const SEED = 42;
 const N = 1000;
-
-// ── Speed curve config (exact copy from lib/speed.js) ────────────────
-const SPEED_CURVE_CONFIG = { L: 95, k: 0.035, t0: 75, sensitivity: 45, minDays: 3 };
-
-// ── Proficiency tier boundaries (exact copy from lib/tiers.js) ───────
-const PROF_TIERS = [
-  { name: 'Sage',        min: 81 },
-  { name: 'Virtuoso',    min: 61 },
-  { name: 'Artisan',     min: 41 },
-  { name: 'Craftsperson', min: 21 },
-  { name: 'Apprentice',  min: 0 },
-];
-
-// ── Speed labels (exact copy from lib/speed.js) ─────────────────────
-const SPEED_LABELS = [
-  { min: 75, label: 'Lightning' },
-  { min: 50, label: 'Swift' },
-  { min: 25, label: 'Steady' },
-  { min: 0,  label: 'Warming Up' },
-];
 
 // ═══════════════════════════════════════════════════════════════════════
 // PRNG — Mulberry32 seeded RNG for reproducibility
@@ -43,8 +29,9 @@ function rand() {
 }
 
 // Box-Muller transform for normal distribution
+// Guard: clamp u1 away from 0 to prevent log(0) = -Infinity → NaN
 function randNormal(mean, stddev) {
-  const u1 = rand();
+  const u1 = Math.max(1e-10, rand());
   const u2 = rand();
   const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   return mean + stddev * z;
@@ -78,20 +65,17 @@ function randBeta(a, b) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Exact formulas from lib/speed.js
+// Speed formula — mirrors lib/speed.js computeRawSpeedScore (dynamic sensitivity)
 // ═══════════════════════════════════════════════════════════════════════
-function getExpectedProficiency(days) {
-  const { L, k, t0 } = SPEED_CURVE_CONFIG;
-  return L / (1 + Math.exp(-k * (days - t0)));
-}
-
 function computeSpeedScore(actualProficiency, effectiveDays) {
   if (effectiveDays < SPEED_CURVE_CONFIG.minDays) return null; // Too Early
   if (actualProficiency === 0) return 0;
 
   const expected = getExpectedProficiency(effectiveDays);
   const deviation = actualProficiency - expected;
-  const normalized = deviation / SPEED_CURVE_CONFIG.sensitivity;
+  // Dynamic sensitivity: widens as expected proficiency grows (matches lib/speed.js)
+  const dynamicSens = SPEED_CURVE_CONFIG.sensitivity * (1 + expected / 100);
+  const normalized = deviation / dynamicSens;
   const sigmoid = 1 / (1 + Math.exp(-normalized));
   return Math.round(sigmoid * 100);
 }
@@ -105,8 +89,8 @@ function getSpeedLabel(score) {
 }
 
 function getProfTier(score) {
-  for (const tier of PROF_TIERS) {
-    if (score >= tier.min) return tier.name;
+  for (const tier of TIERS) {
+    if (score >= tier.minScore) return tier.name;
   }
   return 'Apprentice';
 }
@@ -329,10 +313,10 @@ function printReport(users) {
   console.log();
 
   // Speed label counts (include Too Early)
-  const labelCounts = { 'Lightning': 0, 'Swift': 0, 'Steady': 0, 'Warming Up': 0, 'Too Early': 0 };
+  const labelCounts = { 'Lightning': 0, 'Swift': 0, 'Progressing': 0, 'Warming Up': 0, 'Too Early': 0 };
   for (const u of users) labelCounts[u.speedLabel]++;
   console.log('  Speed Label Counts:');
-  for (const label of ['Lightning', 'Swift', 'Steady', 'Warming Up', 'Too Early']) {
+  for (const label of ['Lightning', 'Swift', 'Progressing', 'Warming Up', 'Too Early']) {
     const pct = ((labelCounts[label] / N) * 100).toFixed(1);
     console.log(`    ${label.padEnd(14)} ${String(labelCounts[label]).padStart(4)} (${pct}%)`);
   }
@@ -342,7 +326,7 @@ function printReport(users) {
   console.log('  [3] CROSS-TABULATION: Proficiency Tier x Speed Label');
   console.log(thinLine);
 
-  const speedLabelNames = ['Lightning', 'Swift', 'Steady', 'Warming Up', 'Too Early'];
+  const speedLabelNames = ['Lightning', 'Swift', 'Progressing', 'Warming Up', 'Too Early'];
   const profTierNames = PROF_TIERS.map(t => t.name);
 
   // Build matrix
@@ -460,9 +444,9 @@ function printReport(users) {
   console.log(thinLine);
 
   const dayBuckets = [
-    { lo: 1, hi: 2, label: '1-2 (Too Early)' },
-    { lo: 3, hi: 5, label: '3-5 days' },
-    { lo: 6, hi: 10, label: '6-10 days' },
+    { lo: 1, hi: 4, label: '1-4 (Too Early)' },
+    { lo: 5, hi: 7, label: '5-7 days' },
+    { lo: 8, hi: 10, label: '8-10 days' },
     { lo: 11, hi: 15, label: '11-15 days' },
     { lo: 16, hi: 25, label: '16-25 days' },
     { lo: 26, hi: 40, label: '26-40 days' },
@@ -475,7 +459,7 @@ function printReport(users) {
     const inBucket = users.filter(u => u.activeDays >= bucket.lo && u.activeDays <= bucket.hi);
     const scoreableInBucket = inBucket.filter(u => u.speedScore !== null);
     const avgProf = mean(inBucket.map(u => u.proficiency));
-    const avgExpected = mean(scoreableInBucket.map(u => u.expected || 0));
+    const avgExpected = mean(scoreableInBucket.map(u => u.expected ?? 0));
     const speeds = scoreableInBucket.map(u => u.speedScore).sort((a, b) => a - b);
     const avgSpeed = speeds.length > 0 ? mean(speeds) : NaN;
     const medSpeed = speeds.length > 0 ? percentile(speeds, 50) : NaN;
@@ -499,22 +483,20 @@ function printReport(users) {
   const thresholds = [
     { label: 'Lightning (75+)', minSpeed: 75 },
     { label: 'Swift (50+)',     minSpeed: 50 },
-    { label: 'Steady (25+)',    minSpeed: 25 },
+    { label: 'Progressing (25+)', minSpeed: 25 },
   ];
 
   // For a given day count, what proficiency yields the speed threshold?
-  // speed = round(sigmoid((prof - E(t)) / sensitivity) * 100) >= threshold
-  // sigmoid(x) >= threshold/100
-  // x >= ln(threshold / (100 - threshold))
-  // (prof - E(t)) / sensitivity >= ln(threshold / (100 - threshold))
-  // prof >= E(t) + sensitivity * ln(threshold / (100 - threshold))
+  // Uses dynamic sensitivity: baseSens * (1 + E(t)/100)
+  // speed = round(sigmoid((prof - E) / dynamicSens) * 100) >= threshold
+  // We need: sigmoid(x) >= (minSpeed - 0.5) / 100  (accounting for rounding)
   function profNeeded(days, minSpeed) {
     const E = getExpectedProficiency(days);
-    // We need: round(sigmoid((prof - E)/sensitivity) * 100) >= minSpeed
-    // sigmoid((prof - E)/sensitivity) >= minSpeed/100
-    // (prof - E)/sensitivity >= ln(minSpeed / (100 - minSpeed))
-    const x = Math.log(minSpeed / (100 - minSpeed));
-    const prof = E + SPEED_CURVE_CONFIG.sensitivity * x;
+    const dynamicSens = SPEED_CURVE_CONFIG.sensitivity * (1 + E / 100);
+    // Account for round(): we need sigmoid(x)*100 >= minSpeed - 0.5
+    const targetRaw = (minSpeed - 0.5) / 100;
+    const x = Math.log(targetRaw / (1 - targetRaw));
+    const prof = E + dynamicSens * x;
     return Math.ceil(Math.max(0, prof));
   }
 
@@ -547,8 +529,8 @@ function printReport(users) {
   const warmingUpPct = ((warmingUpCount / N) * 100).toFixed(1);
   const tooEarlyCount = labelCounts['Too Early'];
   const tooEarlyPct = ((tooEarlyCount / N) * 100).toFixed(1);
-  const steadyCount = labelCounts['Steady'];
-  const steadyPct = ((steadyCount / N) * 100).toFixed(1);
+  const progressingCount = labelCounts['Progressing'];
+  const progressingPct = ((progressingCount / N) * 100).toFixed(1);
 
   const lightningUsers = scoreable.filter(u => u.speedLabel === 'Lightning');
   const lightningAvgProf = lightningUsers.length > 0 ? mean(lightningUsers.map(u => u.proficiency)).toFixed(1) : 'N/A';
@@ -569,7 +551,7 @@ function printReport(users) {
   console.log(`     The speed distribution for non-tech users:`);
   console.log(`       Too Early:  ${tooEarlyPct}% (${tooEarlyCount} users with <${SPEED_CURVE_CONFIG.minDays} active days)`);
   console.log(`       Warming Up: ${warmingUpPct}% (${warmingUpCount} users)`);
-  console.log(`       Steady:     ${steadyPct}% (${steadyCount} users)`);
+  console.log(`       Progressing: ${progressingPct}% (${progressingCount} users)`);
   console.log(`       Swift:      ${swiftPct}% (${swiftCount} users)`);
   console.log(`       Lightning:  ${lightningPct}% (${lightningCount} users)`);
 
@@ -620,7 +602,7 @@ function printReport(users) {
   console.log('     Lower sensitivity => more punishing (small deviations amplified).');
   console.log(`     With sensitivity=${SPEED_CURVE_CONFIG.sensitivity}, a user who is ${SPEED_CURVE_CONFIG.sensitivity} points ABOVE expected gets speed ~73.`);
   console.log(`     A user who is ${SPEED_CURVE_CONFIG.sensitivity} points BELOW expected gets speed ~27.`);
-  console.log(`     Zero deviation => speed = 50 (Swift/Steady boundary).`);
+  console.log(`     Zero deviation => speed = 50 (Swift/Progressing boundary).`);
 
   console.log();
   console.log(line);
