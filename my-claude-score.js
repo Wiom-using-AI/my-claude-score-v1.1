@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 'use strict';
 
+// ── Version note ───────────────────────────────────────────────────
+// Public version: v1.1 (user-facing name for sharing)
+// Internal dev version: v12.2 (iterative build history)
+// These are the SAME codebase — renamed for public release.
+// Dev folder: my-claude-score-v12/  |  npm/GitHub name: my-claude-score
+// ────────────────────────────────────────────────────────────────────
+
 const { parseArgs } = require('util');
 const { resolve } = require('./lib/resolve');
 const { computeScore, calculateCombinedScore } = require('./lib/scoring');
