@@ -1,5 +1,5 @@
 {
-  "name": "my-claude-score",
+  "name": "my-claude-score-v1.1",
   "version": "1.1.0",
   "description": "Your Claude Code proficiency score — like neofetch, but for Claude Code skill",
   "main": "my-claude-score.js",
@@ -23,7 +23,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/guneet-wiom/my-claude-score.git"
+    "url": "git+https://github.com/Wiom-using-AI/my-claude-score-v1.1.git"
   },
   "engines": {
     "node": ">=18.0.0"
